@@ -27,7 +27,7 @@
 
   - name: Download dockerfile
     ansible.builtin.get_url:
-      url: {{ dockerfile_path }}
+      url: "{{ dockerfile_path }}"
       dest: /opt/docker
       mode: '0440'
 
