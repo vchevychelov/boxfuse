@@ -1,5 +1,5 @@
 ---
-- hosts: dev_01
+- hosts: dev01
   remote_user: user
   become: yes
   become_user: root
@@ -52,7 +52,7 @@
       dest: ./{{ default_container_name }}.tar
       flat: true
 
-- hosts: stage_01
+- hosts: stage01
   gather_facts: no
   remote_user: user
   become: yes
