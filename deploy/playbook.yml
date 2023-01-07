@@ -1,56 +1,101 @@
 ---
-- hosts: prod
+- hosts: dev
+  remote_user: user
+  become: yes
+  become_user: root
+  become_method: sudo
+  vars:
+    default_container_name: mywebapps
+    default_container_image: mywebapps
+    dockerfile_path : https://raw.githubusercontent.com/vchevychelov/boxfuse/master/deploy/Dockerfile
   tasks:
 
-  - name: Present tomcat
+  - name: Present docker
     ansible.builtin.apt:
       name: "{{ item }}"
       state: present
     loop:
-      - default-jdk
-      - tomcat9
+      - docker.io
+      - python3-docker
     become: yes
 
   - name: Make sure a service is running
     ansible.builtin.systemd:
       state: started
       enabled: true
-      name: tomcat9
+      name: docker
 
-# handlers file for webserver
-  - name: restart tomcat9
-    service: name=tomcat9 state=restarted
+  - name: Download dockerfile
+    ansible.builtin.get_url:
+      url: {{ dockerfile_path }}
+      dest: /opt/docker
+      mode: '0440'
 
-- hosts: dev
+  - name: build container image
+    docker_image:
+      name: "{{ default_container_name }}"
+      build:
+        path: /opt/docker
+      state: present
+      source: build
+
+  - name: archive container image as a tarball
+    docker_image:
+      name: "{{ default_container_image }}"
+      archive_path: /opt/docker/{{ default_container_name }}.tar
+      source: pull
+      state: present
+
+  - name: fetch archived image
+    fetch:
+      src: /opt/docker/{{ default_container_name }}.tar
+      dest: ./{{ default_container_name }}.tar
+      flat: true
+
+- hosts: stage
+  gather_facts: no
+  remote_user: user
+  become: yes
+  become_user: root
+  become_method: sudo
   vars:
-    repo_url: https://github.com/boxfuse/boxfuse-sample-java-war-hello.git
-    workspace: /src/webapps
+    default_container_name: mywebapps
+    default_container_image: mywebapps
+
   tasks:
 
-  - name: Present packages dev
+  - name: Present docker
     ansible.builtin.apt:
       name: "{{ item }}"
-      state: latest
+      state: present
     loop:
-      - default-jdk
-      - git
-      - maven
+      - docker.io
+      - python3-docker
     become: yes
 
+  - name: Make sure a service is running
+    ansible.builtin.systemd:
+      state: started
+      enabled: true
+      name: docker
 
-  - name: Git clone apps
-    ansible.builtin.git:
-      repo: "{{ repo_url }}"
-      dest: "{{ workspace }}"
-      clone: yes
-      update: yes
+  - name: copy tarball to host
+    copy:
+      src: ./{{ default_container_name }}.tar
+      dest: /root/{{ default_container_name }}.tar
 
-  - name: Build app
-    shell: mvn package chdir="{{ workspace }}"
+  - name: load container from tarball
+    docker_image:
+      name: "{{ default_container_name }}"
+      load_path: /root/{{ default_container_name }}.tar
+      state: present
+      source: load
 
-  - name: Transfer file from ServerA to ServerB
-    synchronize:
-      src: /src/webapps/target/hello-1.0.war
-      dest: /var/lib/tomcat9/webapps/
-      mode: pull
-    delegate_to: 51.250.78.160
+  - name: Container present
+    docker_container:
+      name: "{{ default_container_name }}"
+      image: "{{ default_container_image }}"
+      state: started
+      restart: yes
+      ports:
+       - "8080:8080"
